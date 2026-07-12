@@ -1,0 +1,391 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+//////////////////////////////////////////////////////////
+// ENUMS
+//////////////////////////////////////////////////////////
+
+enum FileStatus {
+  AVAILABLE
+  CHECKED_OUT
+  ARCHIVED
+  MISSING
+}
+
+enum RackStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  CHECKOUT
+  RETURN
+}
+
+//////////////////////////////////////////////////////////
+// AUTH & USERS
+//////////////////////////////////////////////////////////
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  isActive      Boolean  @default(true)
+  lastLogin     DateTime?
+
+  roleId        String
+  role          Role     @relation(fields: [roleId], references: [id])
+
+  userScopes    UserScope[]
+  createdFiles  File[]    @relation("CreatedBy")
+  updatedFiles  File[]    @relation("UpdatedBy")
+  auditLogs     AuditLog[]
+  activityLogs  ActivityLog[]
+  checkouts     Checkout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@map("users")
+}
+
+model Role {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String?
+
+  users       User[]
+  permissions RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String?
+
+  roles RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserScope {
+  id            String   @id @default(cuid())
+  userId        String
+  buildingId    String?
+  floorId       String?
+  departmentId  String?
+  rackId        String?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  building    Building?    @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  floor       Floor?       @relation(fields: [floorId], references: [id], onDelete: SetNull)
+  department  Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  rack        Rack?        @relation(fields: [rackId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_scopes")
+}
+
+//////////////////////////////////////////////////////////
+// LOCATION HIERARCHY
+//////////////////////////////////////////////////////////
+
+model Building {
+  id          String @id @default(cuid())
+  name        String @unique
+  code        String @unique
+  description String?
+  address     String?
+  isActive    Boolean @default(true)
+
+  floors      Floor[]
+  userScopes  UserScope[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@map("buildings")
+}
+
+model Floor {
+  id          String @id @default(cuid())
+  name        String
+  floorNumber Int
+  description String?
+  isActive    Boolean @default(true)
+
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  departments Department[]
+  userScopes  UserScope[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@unique([buildingId, floorNumber])
+  @@map("floors")
+}
+
+model Department {
+  id          String @id @default(cuid())
+  name        String
+  code        String @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  floorId String
+  floor   Floor @relation(fields: [floorId], references: [id], onDelete: Cascade)
+
+  racks       Rack[]
+  files       File[]
+  userScopes  UserScope[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@unique([floorId, name])
+  @@map("departments")
+}
+
+model Rack {
+  id            String @id @default(cuid())
+  rackNumber    String
+  rackName      String
+  description   String?
+  status        RackStatus @default(ACTIVE)
+  capacity      Int?
+  usedCapacity  Int @default(0)
+  isActive      Boolean @default(true)
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  shelves     Shelf[]
+  files       File[]
+  userScopes  UserScope[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@unique([departmentId, rackNumber])
+  @@map("racks")
+}
+
+model Shelf {
+  id          String @id @default(cuid())
+  name        String
+  position    Int
+  description String?
+  isActive    Boolean @default(true)
+
+  rackId String
+  rack   Rack @relation(fields: [rackId], references: [id], onDelete: Cascade)
+
+  files File[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@unique([rackId, position])
+  @@map("shelves")
+}
+
+//////////////////////////////////////////////////////////
+// FILES
+//////////////////////////////////////////////////////////
+
+model FinancialYear {
+  id        String @id @default(cuid())
+  year      Int @unique
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("financial_years")
+}
+
+model File {
+  id            String @id @default(cuid())
+  fileNumber    String @unique
+  fileName      String
+  description   String?
+  status        FileStatus @default(AVAILABLE)
+  isArchived    Boolean @default(false)
+  financialYear Int
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  rackId String
+  rack   Rack @relation(fields: [rackId], references: [id], onDelete: Restrict)
+
+  shelfId String?
+  shelf   Shelf? @relation(fields: [shelfId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User @relation("CreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  updatedById String
+  updatedBy   User @relation("UpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  checkouts     Checkout[]
+  activityLogs  ActivityLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([rackId])
+  @@index([shelfId])
+  @@index([createdById])
+  @@map("files")
+}
+
+//////////////////////////////////////////////////////////
+// CHECKOUT / BORROW
+//////////////////////////////////////////////////////////
+
+model Checkout {
+  id                  String @id @default(cuid())
+  fileId              String
+  file                File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  userId              String
+  user                User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  takenDate           DateTime @default(now())
+  expectedReturnDate  DateTime?
+  actualReturnDate    DateTime?
+  remarks             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("checkouts")
+}
+
+//////////////////////////////////////////////////////////
+// ACTIVITY LOG (File History)
+//////////////////////////////////////////////////////////
+
+model ActivityLog {
+  id      String @id @default(cuid())
+  fileId  String
+  file    File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  userId  String
+  user    User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  action  String  // "CREATED", "MOVED", "UPDATED", "ARCHIVED", "CHECKED_OUT", "RETURNED"
+  details String?
+
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+  @@map("activity_logs")
+}
+
+//////////////////////////////////////////////////////////
+// AUDIT LOG
+//////////////////////////////////////////////////////////
+
+model AuditLog {
+  id          String @id @default(cuid())
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  entityType  String  // "File", "Rack", "Building", "Department", etc.
+  entityId    String
+  action      AuditAction
+  
+  previousValue String? // JSON
+  newValue      String? // JSON
+  changeDetails String?
+
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+//////////////////////////////////////////////////////////
+// SYSTEM SETTINGS
+//////////////////////////////////////////////////////////
+
+model SystemSetting {
+  id          String @id @default(cuid())
+  key         String @unique
+  value       String
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+//////////////////////////////////////////////////////////
+// RECYCLE BIN (Soft Deletes)
+//////////////////////////////////////////////////////////
+
+model RecycleBin {
+  id              String @id @default(cuid())
+  entityType      String
+  entityId        String
+  entityData      String // JSON
+  deletedAt       DateTime
+  canRestoreUntil DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType])
+  @@index([deletedAt])
+  @@map("recycle_bin")
+}
