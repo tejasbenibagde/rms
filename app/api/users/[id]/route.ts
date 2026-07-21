@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       updateData.passwordHash = await bcryptjs.hash(password, 12);
     }
 
-    const updatedUser = await prisma.$transaction(async (tx) => {
+    const updatedUser = await prisma.$transaction(async (tx: any) => {
       const u = await tx.user.update({
         where: { id },
         data: updateData,

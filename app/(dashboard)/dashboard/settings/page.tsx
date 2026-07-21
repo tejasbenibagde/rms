@@ -10,6 +10,7 @@ import {
   Loader,
   Check,
 } from 'lucide-react';
+import { convertToIndianFY } from '@/lib/utils/fy';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
@@ -229,7 +230,7 @@ export default function SettingsPage() {
                 .filter(year => year >= new Date().getFullYear() - 5 && year <= new Date().getFullYear() + 5)
                 .map(year => (
                   <option key={year} value={year}>
-                    {year}
+                    {convertToIndianFY(year)}
                   </option>
                 ))}
             </select>

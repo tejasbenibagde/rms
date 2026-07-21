@@ -87,7 +87,7 @@ export async function PUT(
       );
     }
 
-    const role = await prisma.$transaction(async (tx) => {
+    const role = await prisma.$transaction(async (tx: any) => {
       const r = await tx.role.update({
         where: { id },
         data: {

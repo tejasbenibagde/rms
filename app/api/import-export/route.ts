@@ -669,7 +669,7 @@ async function importFiles(data: any[], userId: string) {
     where: { deletedAt: null },
     select: { fileNumber: true },
   });
-  const existingFileNumbers = new Set(existingFiles.map((file) => file.fileNumber));
+  const existingFileNumbers = new Set(existingFiles.map((file: { fileNumber: string }) => file.fileNumber));
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i] as any;
@@ -694,7 +694,7 @@ async function importFiles(data: any[], userId: string) {
     }
 
     const dept = departments.find(
-      (d) => d.name.toLowerCase() === deptName.toLowerCase()
+      (d: { id: string; name: string }) => d.name.toLowerCase() === deptName.toLowerCase()
     );
     if (!dept) {
       errors.push(`Row ${rowNumber}: Department "${deptName}" not found`);
@@ -702,7 +702,7 @@ async function importFiles(data: any[], userId: string) {
     }
 
     const rack = racks.find(
-      (r) => r.rackNumber.toLowerCase() === rackNo.toLowerCase()
+      (r: { id: string; rackNumber: string; rackName: string }) => r.rackNumber.toLowerCase() === rackNo.toLowerCase()
     );
     if (!rack) {
       errors.push(`Row ${rowNumber}: Rack "${rackNo}" not found`);

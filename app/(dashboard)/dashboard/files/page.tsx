@@ -14,6 +14,10 @@ import {
   Pencil,
   Download,
   Upload,
+  Eye,
+  RotateCcw,
+  Info,
+  Calendar,
 } from 'lucide-react';
 import { convertToIndianFY } from '@/lib/utils/fy';
 import { toast } from 'sonner';
@@ -30,6 +34,13 @@ interface File {
   rack: { id: string; rackNumber: string; rackName: string };
   shelf?: { id: string; name: string };
   createdAt: string;
+  checkouts?: Array<{
+    id: string;
+    takenDate: string;
+    expectedReturnDate?: string | null;
+    remarks?: string | null;
+    user: { id: string; name: string; email: string };
+  }>;
 }
 
 interface Department {
@@ -69,6 +80,17 @@ export default function FilesPage() {
   const [importMessage, setImportMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [importDetails, setImportDetails] = useState<string[]>([]);
+
+  // Checkout Modal State
+  const [checkoutFile, setCheckoutFile] = useState<File | null>(null);
+  const [checkoutRemarks, setCheckoutRemarks] = useState('');
+  const [checkoutExpectedDate, setCheckoutExpectedDate] = useState('');
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  // Detail Modal State
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [detailFile, setDetailFile] = useState<any | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
 
   useEffect(() => {
     fetchDepartmentsAndRacks();
@@ -182,17 +204,29 @@ export default function FilesPage() {
     setShowForm(true);
   };
 
-  const handleCheckout = async (id: string) => {
+  const openCheckoutModal = (file: File) => {
+    setCheckoutFile(file);
+    setCheckoutRemarks('');
+    setCheckoutExpectedDate('');
+  };
+
+  const handleCheckoutSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkoutFile) return;
+
+    setIsCheckingOut(true);
     try {
-      const response = await fetch(`/api/files/${id}/checkout`, {
+      const response = await fetch(`/api/files/${checkoutFile.id}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          expectedReturnDate: null,
-          remarks: '',
+          expectedReturnDate: checkoutExpectedDate || null,
+          remarks: checkoutRemarks,
         }),
       });
+
       if (response.ok) {
+        setCheckoutFile(null);
         await fetchFiles();
         toast.success('File checked out successfully');
       } else {
@@ -202,6 +236,51 @@ export default function FilesPage() {
     } catch (error) {
       console.error('Failed to checkout file:', error);
       toast.error('Failed to check out file');
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
+  const handleReturn = async (id: string) => {
+    if (!confirm('Are you sure you want to return this file?')) return;
+
+    try {
+      const response = await fetch(`/api/files/${id}/checkout`, {
+        method: 'PUT',
+      });
+
+      if (response.ok) {
+        await fetchFiles();
+        toast.success('File returned successfully');
+        if (selectedFileId === id) {
+          handleViewDetails(id);
+        }
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || 'Failed to return file');
+      }
+    } catch (error) {
+      console.error('Failed to return file:', error);
+      toast.error('Failed to return file');
+    }
+  };
+
+  const handleViewDetails = async (id: string) => {
+    setSelectedFileId(id);
+    setIsDetailLoading(true);
+    try {
+      const response = await fetch(`/api/files/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setDetailFile(data);
+      } else {
+        toast.error('Failed to load file details');
+      }
+    } catch (error) {
+      console.error('Error loading file details:', error);
+      toast.error('Error loading file details');
+    } finally {
+      setIsDetailLoading(false);
     }
   };
 
@@ -719,21 +798,40 @@ export default function FilesPage() {
                       {convertToIndianFY(file.financialYear)}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <span
-                        className={`inline-flex px-2 py-1 rounded text-xs font-semibold ${file.status === 'AVAILABLE'
-                            ? 'bg-green-100 text-green-700'
-                            : file.status === 'CHECKED_OUT'
-                              ? 'bg-blue-100 text-blue-700'
-                              : file.status === 'ARCHIVED'
-                                ? 'bg-gray-100 text-gray-700'
-                                : 'bg-red-100 text-red-700'
-                          }`}
-                      >
-                        {file.status.replace('_', ' ')}
-                      </span>
+                      <div>
+                        <span
+                          className={`inline-flex px-2 py-1 rounded text-xs font-semibold ${file.status === 'AVAILABLE'
+                              ? 'bg-green-100 text-green-700'
+                              : file.status === 'CHECKED_OUT'
+                                ? 'bg-blue-100 text-blue-700'
+                                : file.status === 'ARCHIVED'
+                                  ? 'bg-gray-100 text-gray-700'
+                                  : 'bg-red-100 text-red-700'
+                            }`}
+                        >
+                          {file.status.replace('_', ' ')}
+                        </span>
+                        {file.status === 'CHECKED_OUT' && file.checkouts && file.checkouts[0] && (
+                          <div className="text-[11px] text-neutral-500 mt-1 max-w-[180px] leading-tight">
+                            <span className="block text-neutral-700 font-medium truncate" title={file.checkouts[0].remarks || ''}>
+                              To: {file.checkouts[0].remarks || file.checkouts[0].user.name || file.checkouts[0].user.email}
+                            </span>
+                            <span className="block text-neutral-400 text-[10px]">
+                              {new Date(file.checkouts[0].takenDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleViewDetails(file.id)}
+                          title="View Details & History"
+                          className="p-2 text-neutral-600 hover:bg-neutral-50 rounded-lg transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleEdit(file)}
                           title="Edit"
@@ -741,13 +839,24 @@ export default function FilesPage() {
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleCheckout(file.id)}
-                          title="Checkout"
-                          className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                        >
-                          <BaggageClaim className="w-4 h-4" />
-                        </button>
+                        {file.status === 'CHECKED_OUT' ? (
+                          <button
+                            onClick={() => handleReturn(file.id)}
+                            title="Return File"
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openCheckoutModal(file)}
+                            title="Checkout"
+                            disabled={file.status !== 'AVAILABLE'}
+                            className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                          >
+                            <BaggageClaim className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(file.id)}
                           title="Delete"
@@ -761,6 +870,285 @@ export default function FilesPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout Modal */}
+      {checkoutFile && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-neutral-200 max-w-md w-full overflow-hidden">
+            <div className="px-6 py-4 bg-neutral-50 border-b border-neutral-200 flex justify-between items-center">
+              <h3 className="font-semibold text-neutral-900 flex items-center gap-2">
+                <BaggageClaim className="w-5 h-5 text-amber-600" />
+                Checkout File
+              </h3>
+              <button
+                onClick={() => setCheckoutFile(null)}
+                className="p-1 hover:bg-neutral-200 rounded-lg text-neutral-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleCheckoutSubmit} className="p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                <p className="font-medium">File Details:</p>
+                <p className="font-mono text-xs mt-1">No: {checkoutFile.fileNumber}</p>
+                <p className="font-medium mt-0.5">{checkoutFile.fileName}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  Remarks / Borrowed By *
+                </label>
+                <textarea
+                  required
+                  placeholder="Who is borrowing this file and why? (e.g., Jane Doe - Finance Audit, Room 4B)"
+                  value={checkoutRemarks}
+                  onChange={(e) => setCheckoutRemarks(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  Expected Return Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={checkoutExpectedDate}
+                  onChange={(e) => setCheckoutExpectedDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCheckoutFile(null)}
+                  className="px-4 py-2 border border-neutral-300 rounded-lg hover:bg-neutral-50 text-sm"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isCheckingOut}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold flex items-center gap-1.5"
+                >
+                  {isCheckingOut ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" />
+                      Checking out...
+                    </>
+                  ) : (
+                    'Confirm Checkout'
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Detail / History Modal */}
+      {selectedFileId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-neutral-200 max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 bg-neutral-50 border-b border-neutral-200 flex justify-between items-center">
+              <h3 className="font-semibold text-neutral-900 flex items-center gap-2">
+                <Info className="w-5 h-5 text-primary" />
+                File Details & History
+              </h3>
+              <button
+                onClick={() => {
+                  setSelectedFileId(null);
+                  setDetailFile(null);
+                }}
+                className="p-1 hover:bg-neutral-200 rounded-lg text-neutral-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {isDetailLoading || !detailFile ? (
+                <div className="text-center py-12">
+                  <Loader className="w-6 h-6 animate-spin text-primary mx-auto mb-2" />
+                  <p className="text-sm text-neutral-500">Loading details and logs...</p>
+                </div>
+              ) : (
+                <>
+                  {/* General file attributes */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-xl border border-neutral-200">
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block">File Number</span>
+                      <span className="font-mono font-medium text-neutral-900 text-sm">{detailFile.fileNumber}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block">File Name</span>
+                      <span className="font-medium text-neutral-900 text-sm">{detailFile.fileName}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block">Department</span>
+                      <span className="text-neutral-700 text-sm">{detailFile.department?.name}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block">Financial Year</span>
+                      <span className="text-neutral-700 text-sm font-medium">{convertToIndianFY(detailFile.financialYear)}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block">Rack / Shelf Location</span>
+                      <span className="text-neutral-700 text-sm">
+                        {detailFile.rack ? `Rack ${detailFile.rack.rackNumber} (${detailFile.rack.rackName})` : 'N/A'}
+                        {detailFile.shelf ? ` - Shelf ${detailFile.shelf.name}` : ''}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block">Status</span>
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold mt-1 ${detailFile.status === 'AVAILABLE'
+                            ? 'bg-green-100 text-green-700'
+                            : detailFile.status === 'CHECKED_OUT'
+                              ? 'bg-blue-100 text-blue-700'
+                              : detailFile.status === 'ARCHIVED'
+                                ? 'bg-gray-100 text-gray-700'
+                                : 'bg-red-100 text-red-700'
+                          }`}
+                      >
+                        {detailFile.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <div className="md:col-span-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block">Description</span>
+                      <p className="text-neutral-600 text-sm mt-0.5 whitespace-pre-wrap">{detailFile.description || 'No description provided.'}</p>
+                    </div>
+                  </div>
+
+                  {/* Active checkout card */}
+                  {detailFile.status === 'CHECKED_OUT' && detailFile.checkouts?.find((c: any) => !c.actualReturnDate) && (
+                    (() => {
+                      const active = detailFile.checkouts.find((c: any) => !c.actualReturnDate);
+                      return (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <h4 className="text-sm font-semibold text-amber-900 flex items-center gap-1.5 mb-2">
+                            <BaggageClaim className="w-4 h-4 text-amber-700" />
+                            Current Borrow/Checkout Details
+                          </h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <span className="text-neutral-500 block">Checked Out By:</span>
+                              <span className="font-medium text-neutral-800">{active.user?.name || active.user?.email || 'Unknown User'}</span>
+                            </div>
+                            <div>
+                              <span className="text-neutral-500 block">Taken On:</span>
+                              <span className="font-medium text-neutral-800">{new Date(active.takenDate).toLocaleString()}</span>
+                            </div>
+                            {active.expectedReturnDate && (
+                              <div>
+                                <span className="text-neutral-500 block">Expected Return:</span>
+                                <span className="font-medium text-amber-800">{new Date(active.expectedReturnDate).toLocaleDateString()}</span>
+                              </div>
+                            )}
+                            <div className="sm:col-span-2">
+                              <span className="text-neutral-500 block">Remarks / Borrowed By notes:</span>
+                              <p className="font-medium text-neutral-800 italic mt-0.5">"{active.remarks || 'No remarks provided'}"</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex justify-end">
+                            <Button
+                              onClick={() => handleReturn(detailFile.id)}
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Return File Now
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+
+                  {/* Tabbed view for history: Checkouts & General Activity */}
+                  <div className="space-y-4">
+                    <div className="border-b border-neutral-200 flex gap-4">
+                      <h4 className="text-sm font-semibold text-neutral-900 pb-2 border-b-2 border-primary">
+                        Borrow & Checkout History ({detailFile.checkouts?.length || 0})
+                      </h4>
+                    </div>
+
+                    {/* Checkouts History List */}
+                    {!detailFile.checkouts || detailFile.checkouts.length === 0 ? (
+                      <p className="text-sm text-neutral-500 text-center py-4">No borrow or checkout history recorded for this file.</p>
+                    ) : (
+                      <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2">
+                        {detailFile.checkouts.map((c: any) => (
+                          <div key={c.id} className="border border-neutral-200 rounded-lg p-3 text-xs bg-white space-y-2">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="font-medium text-neutral-800">{c.user?.name || c.user?.email}</span>
+                                <span className="text-neutral-400 block mt-0.5">Taken: {new Date(c.takenDate).toLocaleString()}</span>
+                              </div>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${c.actualReturnDate ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}
+                              >
+                                {c.actualReturnDate ? 'Returned' : 'Active Borrow'}
+                              </span>
+                            </div>
+                            {c.remarks && (
+                              <p className="text-neutral-600 italic bg-neutral-50 p-2 rounded">
+                                <strong className="not-italic text-neutral-500">Remarks:</strong> {c.remarks}
+                              </p>
+                            )}
+                            {c.actualReturnDate ? (
+                              <p className="text-green-600 font-medium">Returned on: {new Date(c.actualReturnDate).toLocaleString()}</p>
+                            ) : c.expectedReturnDate ? (
+                              <p className="text-amber-600 font-medium">Expected Return: {new Date(c.expectedReturnDate).toLocaleDateString()}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* General Activity Log */}
+                  <div className="space-y-3 pt-2">
+                    <h4 className="text-sm font-semibold text-neutral-900">
+                      System Activity Log
+                    </h4>
+                    {!detailFile.activityLogs || detailFile.activityLogs.length === 0 ? (
+                      <p className="text-sm text-neutral-500 text-center py-4">No activity log found.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
+                        {detailFile.activityLogs.map((log: any) => (
+                          <div key={log.id} className="flex justify-between items-start border-l-2 border-neutral-300 pl-3 py-1 text-xs">
+                            <div>
+                              <span className="font-semibold text-neutral-800">{log.action}</span>
+                              <p className="text-neutral-600 mt-0.5">{log.details}</p>
+                              <span className="text-neutral-400 block mt-0.5">By: {log.user?.name || log.user?.email || 'System'}</span>
+                            </div>
+                            <span className="text-neutral-400 whitespace-nowrap">{new Date(log.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-neutral-50 border-t border-neutral-200 flex justify-end gap-2">
+              <Button
+                onClick={() => {
+                  setSelectedFileId(null);
+                  setDetailFile(null);
+                }}
+                className="px-4 py-2 border border-neutral-300 rounded-lg hover:bg-neutral-50 text-sm text-foreground font-semibold"
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}

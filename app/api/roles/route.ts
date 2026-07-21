@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const role = await prisma.$transaction(async (tx) => {
+    const role = await prisma.$transaction(async (tx: any) => {
       const newRole = await tx.role.create({
         data: {
           name,

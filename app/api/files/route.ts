@@ -47,6 +47,16 @@ export async function GET(request: NextRequest) {
           rack: { select: { id: true, rackNumber: true, rackName: true } },
           shelf: { select: { id: true, name: true } },
           createdAt: true,
+          checkouts: {
+            where: { actualReturnDate: null },
+            select: {
+              id: true,
+              takenDate: true,
+              expectedReturnDate: true,
+              remarks: true,
+              user: { select: { id: true, name: true, email: true } },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
